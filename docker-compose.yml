@@ -1,0 +1,17 @@
+services:
+  capki:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "443:8443"
+    volumes:
+      - capki-data:/data
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME:-ca.example.org}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+    restart: unless-stopped
+
+volumes:
+  capki-data:
