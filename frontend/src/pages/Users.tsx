@@ -17,6 +17,10 @@ export default function Users() {
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('')
 
+  const [resettingId, setResettingId] = useState<number | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
   const refresh = useCallback(async () => {
     const [u, r] = await Promise.all([usersApi.list(), usersApi.listRoles()])
     setUsers(u)
@@ -55,6 +59,26 @@ export default function Users() {
       await refresh()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update role.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleResetPassword(e: FormEvent, id: number) {
+    e.preventDefault()
+    setError(null)
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    setBusy(true)
+    try {
+      await usersApi.update(id, { new_password: newPassword })
+      setResettingId(null)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update password.')
     } finally {
       setBusy(false)
     }
@@ -177,16 +201,81 @@ export default function Users() {
                     </span>
                   </td>
                   <td className="py-2 text-right">
-                    <button
-                      onClick={() => handleToggleActive(u)}
-                      disabled={busy || u.username === actor?.username}
-                      className={u.is_active ? styles.linkDanger : styles.link}
-                    >
-                      {u.is_active ? 'Deactivate' : 'Reactivate'}
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      {u.auth_source === 'local' && (
+                        <button
+                          onClick={() => {
+                            setError(null)
+                            setNewPassword('')
+                            setConfirmPassword('')
+                            setResettingId(resettingId === u.id ? null : u.id)
+                          }}
+                          disabled={busy}
+                          className={styles.link}
+                        >
+                          Reset password
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleToggleActive(u)}
+                        disabled={busy || u.username === actor?.username}
+                        className={u.is_active ? styles.linkDanger : styles.link}
+                      >
+                        {u.is_active ? 'Deactivate' : 'Reactivate'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {resettingId !== null && (
+                <tr className={styles.tableRow}>
+                  <td colSpan={6} className="py-3">
+                    <form
+                      className="flex items-end gap-3"
+                      onSubmit={(e) => handleResetPassword(e, resettingId)}
+                    >
+                      <div>
+                        <label className={styles.label}>New password</label>
+                        <input
+                          type="password"
+                          autoFocus
+                          className={styles.input}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          minLength={8}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className={styles.label}>Confirm password</label>
+                        <input
+                          type="password"
+                          className={styles.input}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          minLength={8}
+                          required
+                        />
+                      </div>
+                      <button type="submit" disabled={busy} className={styles.button}>
+                        Save password
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className={styles.buttonSecondary}
+                        onClick={() => {
+                          setResettingId(null)
+                          setNewPassword('')
+                          setConfirmPassword('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
