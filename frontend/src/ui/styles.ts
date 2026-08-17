@@ -8,6 +8,9 @@ export const styles = {
   label: 'block text-sm font-medium text-gray-700',
   input:
     'mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none transition-shadow focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20',
+  selectSm:
+    'rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-6 text-xs text-gray-700 outline-none transition-colors hover:border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20',
+  filterLabel: 'text-xs font-medium uppercase tracking-wide text-gray-500',
   button:
     'inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50',
   buttonSecondary:

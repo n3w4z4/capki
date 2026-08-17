@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from capki.api.deps import require_permission
 from capki.core.rbac.context import AuthContext
 from capki.core.rbac.permissions import CERT_ISSUE, CERT_READ, CERT_REVOKE
+from capki.db.base import utcnow
 from capki.db.models.certificates import Certificate, IssuedVia
 from capki.db.session import get_db
 from capki.services import cert_service, revocation_service
@@ -76,6 +77,11 @@ _ERROR_STATUS = {
 def list_certificates(
     q: str | None = Query(default=None, description="Case-insensitive substring match on subject DN"),
     status_filter: str | None = Query(default=None, alias="status"),
+    profile_code: str | None = Query(default=None),
+    issued_via: str | None = Query(default=None),
+    valid: bool | None = Query(
+        default=None, description="Filter by expiration: true = not_after in the future, false = expired"
+    ),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -86,6 +92,13 @@ def list_certificates(
         query = query.filter(Certificate.subject_dn.ilike(f"%{q}%"))
     if status_filter:
         query = query.filter(Certificate.status == status_filter)
+    if profile_code:
+        query = query.filter(Certificate.profile_code == profile_code)
+    if issued_via:
+        query = query.filter(Certificate.issued_via == issued_via)
+    if valid is not None:
+        now = utcnow()
+        query = query.filter(Certificate.not_after > now if valid else Certificate.not_after <= now)
     certs = query.order_by(Certificate.id.desc()).offset(offset).limit(limit).all()
     return [CertificateSummary.from_model(c) for c in certs]
 

@@ -11,6 +11,21 @@ const PROFILES = [
   { code: 'code_signing', label: 'Code Signing' },
 ]
 
+const STATUS_OPTIONS = [
+  { value: 'valid', label: 'Valid' },
+  { value: 'revoked', label: 'Revoked' },
+]
+
+const VALID_OPTIONS = [
+  { value: 'true', label: 'Not expired' },
+  { value: 'false', label: 'Expired' },
+]
+
+const VIA_OPTIONS = [
+  { value: 'ui', label: 'UI' },
+  { value: 'api', label: 'API' },
+]
+
 const STATUS_TONE: Record<string, BadgeTone> = {
   valid: 'green',
   revoked: 'red',
@@ -45,10 +60,24 @@ export default function Certificates() {
   const [csrPem, setCsrPem] = useState('')
   const [profileCode, setProfileCode] = useState('server')
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
 
-  const refresh = useCallback(async (q?: string) => {
-    setCerts(await certificatesApi.list(q))
-  }, [])
+  const [profileFilter, setProfileFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [validFilter, setValidFilter] = useState('')
+  const [viaFilter, setViaFilter] = useState('')
+
+  const refresh = useCallback(async () => {
+    setCerts(
+      await certificatesApi.list({
+        q: appliedSearch || undefined,
+        status: statusFilter || undefined,
+        profile_code: profileFilter || undefined,
+        issued_via: viaFilter || undefined,
+        valid: validFilter === '' ? undefined : validFilter === 'true',
+      })
+    )
+  }, [appliedSearch, statusFilter, profileFilter, viaFilter, validFilter])
 
   useEffect(() => {
     refresh()
@@ -59,9 +88,7 @@ export default function Certificates() {
   function handleSearch(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    refresh(search || undefined).catch((err) =>
-      setError(err instanceof ApiError ? err.message : 'Search failed.')
-    )
+    setAppliedSearch(search)
   }
 
   async function handleRevoke(id: number) {
@@ -72,7 +99,7 @@ export default function Certificates() {
     setBusy(true)
     try {
       await certificatesApi.revoke(id, 'unspecified')
-      await refresh(search || undefined)
+      await refresh()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Revocation failed.')
     } finally {
@@ -89,7 +116,7 @@ export default function Certificates() {
       const result = await certificatesApi.issue({ csr_pem: csrPem, profile_code: profileCode })
       setIssuedChain(result.chain_pem)
       setCsrPem('')
-      await refresh(search || undefined)
+      await refresh()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Issuance failed.')
     } finally {
@@ -230,6 +257,69 @@ export default function Certificates() {
               Search
             </button>
           </form>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-1.5">
+            <label className={styles.filterLabel}>Profile</label>
+            <select
+              className={styles.selectSm}
+              value={profileFilter}
+              onChange={(e) => setProfileFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {PROFILES.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className={styles.filterLabel}>Status</label>
+            <select
+              className={styles.selectSm}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className={styles.filterLabel}>Valid</label>
+            <select
+              className={styles.selectSm}
+              value={validFilter}
+              onChange={(e) => setValidFilter(e.target.value)}
+            >
+              <option value="">Any</option>
+              {VALID_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className={styles.filterLabel}>Via</label>
+            <select
+              className={styles.selectSm}
+              value={viaFilter}
+              onChange={(e) => setViaFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {VIA_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         {certs.length === 0 ? (
           <p className={styles.muted}>No certificates found.</p>
