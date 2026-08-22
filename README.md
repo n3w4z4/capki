@@ -8,7 +8,6 @@ for automated certificate issuance. It mints its own fresh root + intermediate C
 ## Running with Docker (production)
 
 ```sh
-cd app
 docker compose up --build
 ```
 
@@ -74,7 +73,7 @@ settings), `operator` (issue/revoke certs, manage own API tokens), `auditor` (re
 Backend:
 
 ```sh
-cd app/backend
+cd backend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 export PYTHONPATH=src DATABASE_PATH=/tmp/capki_dev.db CA_MASTER_KEY_FILE=/tmp/capki_master.key \
@@ -88,7 +87,7 @@ uvicorn capki.main:app --reload --host 127.0.0.1 --port 8443 \
 Frontend (proxies `/api` to the backend above, see `vite.config.ts`):
 
 ```sh
-cd app/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -101,7 +100,7 @@ For a production-shaped build, `npm run build` outputs straight into `backend/sr
 After changing a model under `backend/src/capki/db/models/`:
 
 ```sh
-cd app/backend && . .venv/bin/activate
+cd backend && . .venv/bin/activate
 alembic revision --autogenerate -m "describe the change"
 alembic upgrade head
 ```
