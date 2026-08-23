@@ -11,6 +11,7 @@ export interface CertificateSummary {
   not_after: string
   issued_via: string
   requested_by_user_id: number | null
+  requested_by_username: string | null
 }
 
 export interface IssueCertificateResponse extends CertificateSummary {
@@ -22,12 +23,18 @@ export interface RenewCertificateResponse extends IssueCertificateResponse {
   predecessor_superseded: boolean
 }
 
+export interface RequesterSummary {
+  id: number
+  username: string
+}
+
 export interface CertificateFilters {
   q?: string
   status?: string
   profile_code?: string
   issued_via?: string
   valid?: boolean
+  requested_by_username?: string
 }
 
 export const certificatesApi = {
@@ -38,9 +45,13 @@ export const certificatesApi = {
     if (filters?.profile_code) params.set('profile_code', filters.profile_code)
     if (filters?.issued_via) params.set('issued_via', filters.issued_via)
     if (filters?.valid !== undefined) params.set('valid', String(filters.valid))
+    if (filters?.requested_by_username) {
+      params.set('requested_by_username', filters.requested_by_username)
+    }
     const qs = params.toString()
     return apiClient.get<CertificateSummary[]>(`/api/v1/certificates${qs ? `?${qs}` : ''}`)
   },
+  listRequesters: () => apiClient.get<RequesterSummary[]>('/api/v1/certificates/requesters'),
   issue: (payload: { csr_pem: string; profile_code: string; validity_days?: number }) =>
     apiClient.post<IssueCertificateResponse>('/api/v1/certificates', payload),
   revoke: (id: number, reason: string) =>

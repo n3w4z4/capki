@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { certificatesApi, type CertificateSummary } from '../api/certificates'
+import { certificatesApi, type CertificateSummary, type RequesterSummary } from '../api/certificates'
 import { apiClient, ApiError } from '../api/client'
 import { badgeClass, styles, type BadgeTone } from '../ui/styles'
 import CsrGenerator from '../components/CsrGenerator'
@@ -68,6 +68,9 @@ export default function Certificates() {
   const [statusFilter, setStatusFilter] = useState('')
   const [validFilter, setValidFilter] = useState('')
   const [viaFilter, setViaFilter] = useState('')
+  const [requesterInput, setRequesterInput] = useState('')
+  const [requesterFilter, setRequesterFilter] = useState('')
+  const [requesters, setRequesters] = useState<RequesterSummary[]>([])
 
   const refresh = useCallback(async () => {
     setCerts(
@@ -77,15 +80,20 @@ export default function Certificates() {
         profile_code: profileFilter || undefined,
         issued_via: viaFilter || undefined,
         valid: validFilter === '' ? undefined : validFilter === 'true',
+        requested_by_username: requesterFilter || undefined,
       })
     )
-  }, [appliedSearch, statusFilter, profileFilter, viaFilter, validFilter])
+  }, [appliedSearch, statusFilter, profileFilter, viaFilter, validFilter, requesterFilter])
 
   useEffect(() => {
     refresh()
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load certificates.'))
       .finally(() => setLoading(false))
   }, [refresh])
+
+  useEffect(() => {
+    certificatesApi.listRequesters().then(setRequesters).catch(() => {})
+  }, [])
 
   function handleSearch(e: FormEvent) {
     e.preventDefault()
@@ -362,6 +370,28 @@ export default function Certificates() {
               ))}
             </select>
           </div>
+          <div className="flex items-center gap-1.5">
+            <label className={styles.filterLabel}>Requested by</label>
+            <input
+              className={`${styles.selectSm} w-32`}
+              list="requesters-datalist"
+              placeholder="All"
+              value={requesterInput}
+              onChange={(e) => setRequesterInput(e.target.value)}
+              onBlur={() => setRequesterFilter(requesterInput)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  setRequesterFilter(requesterInput)
+                }
+              }}
+            />
+            <datalist id="requesters-datalist">
+              {requesters.map((r) => (
+                <option key={r.id} value={r.username} />
+              ))}
+            </datalist>
+          </div>
         </div>
         {certs.length === 0 ? (
           <p className={styles.muted}>No certificates found.</p>
@@ -375,6 +405,7 @@ export default function Certificates() {
                   <th className="py-2 pr-4 font-medium">Status</th>
                   <th className="py-2 pr-4 font-medium whitespace-nowrap">Valid until</th>
                   <th className="py-2 pr-4 font-medium">Via</th>
+                  <th className="py-2 pr-4 font-medium">Requested by</th>
                   <th className="py-2 font-medium"></th>
                 </tr>
               </thead>
@@ -397,6 +428,7 @@ export default function Certificates() {
                       {formatDate(cert.not_after)}
                     </td>
                     <td className="py-2 pr-4 text-gray-700">{cert.issued_via}</td>
+                    <td className="py-2 pr-4 text-gray-700">{cert.requested_by_username ?? '—'}</td>
                     <td className="py-2 text-right whitespace-nowrap">
                       <button onClick={() => handleView(cert)} className={`mr-3 ${styles.link}`}>
                         View

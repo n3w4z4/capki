@@ -8,6 +8,7 @@ from capki.core.rbac.context import AuthContext
 from capki.core.rbac.permissions import CERT_ISSUE, CERT_READ, CERT_REVOKE
 from capki.db.base import utcnow
 from capki.db.models.certificates import Certificate, IssuedVia
+from capki.db.models.users import User
 from capki.db.session import get_db
 from capki.services import cert_service, revocation_service
 
@@ -25,9 +26,10 @@ class CertificateSummary(BaseModel):
     not_after: str
     issued_via: str
     requested_by_user_id: int | None
+    requested_by_username: str | None
 
     @classmethod
-    def from_model(cls, cert: Certificate) -> "CertificateSummary":
+    def from_model(cls, cert: Certificate, requested_by_username: str | None = None) -> "CertificateSummary":
         return cls(
             id=cert.id,
             serial_hex=cert.serial_hex,
@@ -39,6 +41,7 @@ class CertificateSummary(BaseModel):
             not_after=cert.not_after.isoformat(),
             issued_via=cert.issued_via.value,
             requested_by_user_id=cert.requested_by_user_id,
+            requested_by_username=requested_by_username,
         )
 
 
@@ -83,6 +86,26 @@ _ERROR_STATUS = {
 }
 
 
+class RequesterSummary(BaseModel):
+    id: int
+    username: str
+
+
+@router.get("/requesters", response_model=list[RequesterSummary])
+def list_requesters(
+    db: Session = Depends(get_db), _actor: AuthContext = Depends(require_permission(CERT_READ))
+):
+    """Distinct users who have requested at least one certificate — powers
+    the "Requested by" filter dropdown. Deliberately scoped to CERT_READ
+    (not USER_READ, which auditor/operator don't have) since this is just
+    enough user info to filter certs by, not a general user directory."""
+    requester_ids = db.query(Certificate.requested_by_user_id).filter(
+        Certificate.requested_by_user_id.is_not(None)
+    )
+    rows = db.query(User).filter(User.id.in_(requester_ids)).order_by(User.username).all()
+    return [RequesterSummary(id=u.id, username=u.username) for u in rows]
+
+
 @router.get("", response_model=list[CertificateSummary])
 def list_certificates(
     q: str | None = Query(default=None, description="Case-insensitive substring match on subject DN"),
@@ -91,6 +114,9 @@ def list_certificates(
     issued_via: str | None = Query(default=None),
     valid: bool | None = Query(
         default=None, description="Filter by expiration: true = not_after in the future, false = expired"
+    ),
+    requested_by_username: str | None = Query(
+        default=None, description="Case-insensitive substring match on the requesting user's username"
     ),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
@@ -109,8 +135,23 @@ def list_certificates(
     if valid is not None:
         now = utcnow()
         query = query.filter(Certificate.not_after > now if valid else Certificate.not_after <= now)
+    if requested_by_username:
+        query = query.filter(
+            Certificate.requested_by_user_id.in_(
+                db.query(User.id).filter(User.username.ilike(f"%{requested_by_username}%"))
+            )
+        )
     certs = query.order_by(Certificate.id.desc()).offset(offset).limit(limit).all()
-    return [CertificateSummary.from_model(c) for c in certs]
+
+    requester_ids = {c.requested_by_user_id for c in certs if c.requested_by_user_id is not None}
+    username_by_id = {}
+    if requester_ids:
+        username_by_id = {
+            u.id: u.username for u in db.query(User).filter(User.id.in_(requester_ids)).all()
+        }
+    return [
+        CertificateSummary.from_model(c, username_by_id.get(c.requested_by_user_id)) for c in certs
+    ]
 
 
 @router.get("/{cert_id}", response_model=CertificateSummary)
@@ -122,7 +163,8 @@ def get_certificate(
     cert = db.get(Certificate, cert_id)
     if cert is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return CertificateSummary.from_model(cert)
+    requester = db.get(User, cert.requested_by_user_id) if cert.requested_by_user_id else None
+    return CertificateSummary.from_model(cert, requester.username if requester else None)
 
 
 @router.get("/{cert_id}/pem")
@@ -170,7 +212,7 @@ def issue_certificate(
             status_code=_ERROR_STATUS.get(str(exc), status.HTTP_400_BAD_REQUEST), detail=str(exc)
         ) from exc
 
-    summary = CertificateSummary.from_model(cert)
+    summary = CertificateSummary.from_model(cert, actor.username)
     return IssueCertificateResponse(
         **summary.model_dump(), certificate_pem=cert.certificate_pem, chain_pem=cert_service.build_chain_pem(db, cert)
     )
@@ -198,7 +240,7 @@ def renew_certificate(
             status_code=_ERROR_STATUS.get(str(exc), status.HTTP_400_BAD_REQUEST), detail=str(exc)
         ) from exc
 
-    summary = CertificateSummary.from_model(cert)
+    summary = CertificateSummary.from_model(cert, actor.username)
     return RenewCertificateResponse(
         **summary.model_dump(),
         certificate_pem=cert.certificate_pem,
@@ -222,4 +264,5 @@ def revoke_certificate(
         raise HTTPException(
             status_code=_ERROR_STATUS.get(str(exc), status.HTTP_400_BAD_REQUEST), detail=str(exc)
         ) from exc
-    return CertificateSummary.from_model(cert)
+    requester = db.get(User, cert.requested_by_user_id) if cert.requested_by_user_id else None
+    return CertificateSummary.from_model(cert, requester.username if requester else None)
