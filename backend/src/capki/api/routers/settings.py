@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 from capki.api.deps import require_permission
 from capki.core.rbac.context import AuthContext
 from capki.core.rbac.permissions import SETTINGS_MANAGE, SETTINGS_READ
-from capki.db.models.settings import SamlConfig, TlsListenerConfig
+from capki.db.models.settings import NotificationConfig, SamlConfig, TlsListenerConfig
+from capki.db.models.users import User
 from capki.db.session import get_db
-from capki.services import settings_service, tls_service
+from capki.services import notification_service, settings_service, tls_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -154,3 +155,123 @@ def issue_tls_from_intermediate(
 
     _schedule_restart()
     return TlsReplaceResponse(status=_tls_status(config), restarting=True)
+
+
+class NotificationConfigResponse(BaseModel):
+    expiry_warning_days: int
+    email_enabled: bool
+    smtp_host: str | None
+    smtp_port: int
+    smtp_username: str | None
+    smtp_password_set: bool
+    smtp_use_tls: bool
+    smtp_from_address: str | None
+    telegram_enabled: bool
+    telegram_bot_token_set: bool
+
+    @classmethod
+    def from_model(cls, config: NotificationConfig) -> "NotificationConfigResponse":
+        return cls(
+            expiry_warning_days=config.expiry_warning_days,
+            email_enabled=config.email_enabled,
+            smtp_host=config.smtp_host,
+            smtp_port=config.smtp_port,
+            smtp_username=config.smtp_username,
+            smtp_password_set=config.smtp_password_encrypted is not None,
+            smtp_use_tls=config.smtp_use_tls,
+            smtp_from_address=config.smtp_from_address,
+            telegram_enabled=config.telegram_enabled,
+            telegram_bot_token_set=config.telegram_bot_token_encrypted is not None,
+        )
+
+
+class NotificationConfigUpdate(BaseModel):
+    expiry_warning_days: int | None = None
+    email_enabled: bool | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None  # blank/omitted = leave the stored secret unchanged
+    smtp_use_tls: bool | None = None
+    smtp_from_address: str | None = None
+    telegram_enabled: bool | None = None
+    telegram_bot_token: str | None = None  # blank/omitted = leave the stored secret unchanged
+
+
+class NotificationTestResponse(BaseModel):
+    email_sent: bool
+    email_error: str | None
+    telegram_sent: bool
+    telegram_error: str | None
+
+
+@router.get("/notifications", response_model=NotificationConfigResponse)
+def get_notification_settings(
+    db: Session = Depends(get_db), _actor: AuthContext = Depends(require_permission(SETTINGS_READ))
+):
+    return NotificationConfigResponse.from_model(notification_service.get_notification_config(db))
+
+
+@router.patch("/notifications", response_model=NotificationConfigResponse)
+def update_notification_settings(
+    payload: NotificationConfigUpdate,
+    db: Session = Depends(get_db),
+    _actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    config = notification_service.update_notification_config(db, **payload.model_dump())
+    return NotificationConfigResponse.from_model(config)
+
+
+@router.post("/notifications/test", response_model=NotificationTestResponse)
+def test_notification_settings(
+    db: Session = Depends(get_db),
+    actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    """Sends a one-off test message on every enabled channel to the calling
+    admin's own email / Telegram chat ID, so config mistakes (bad SMTP
+    creds, wrong bot token) surface immediately instead of on tomorrow's
+    scheduled expiry check."""
+    config = notification_service.get_notification_config(db)
+    actor_user = db.get(User, actor.user_id)
+
+    email_sent = False
+    email_error: str | None = None
+    if not config.email_enabled:
+        email_error = "email_notifications_disabled_in_saved_settings"
+    elif actor_user is None or not actor_user.email:
+        email_error = "no_email_on_account"
+    else:
+        try:
+            notification_service.send_email(
+                config,
+                to_address=actor_user.email,
+                subject="capki: test notification",
+                body="This is a test notification from capki's certificate-expiry alerting.",
+            )
+            email_sent = True
+        except Exception as exc:
+            email_error = str(exc) or exc.__class__.__name__
+
+    telegram_sent = False
+    telegram_error: str | None = None
+    if not config.telegram_enabled:
+        telegram_error = "telegram_notifications_disabled_in_saved_settings"
+    elif actor_user is None or not actor_user.telegram_chat_id:
+        telegram_error = "no_telegram_chat_id_on_account"
+    else:
+        try:
+            notification_service.send_telegram(
+                config,
+                chat_id=actor_user.telegram_chat_id,
+                text="capki: test notification\n\nThis is a test notification from capki's certificate-expiry alerting.",
+            )
+            telegram_sent = True
+        except Exception as exc:
+            telegram_error = str(exc) or exc.__class__.__name__
+
+    return NotificationTestResponse(
+        email_sent=email_sent,
+        email_error=email_error,
+        telegram_sent=telegram_sent,
+        telegram_error=telegram_error,
+    )

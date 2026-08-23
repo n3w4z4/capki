@@ -55,7 +55,9 @@ export default function Certificates() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [issuedChain, setIssuedChain] = useState<string | null>(null)
+  const [predecessorSuperseded, setPredecessorSuperseded] = useState(false)
   const [viewingCert, setViewingCert] = useState<ViewingCert | null>(null)
+  const [renewingCert, setRenewingCert] = useState<CertificateSummary | null>(null)
 
   const [csrPem, setCsrPem] = useState('')
   const [profileCode, setProfileCode] = useState('server')
@@ -111,10 +113,18 @@ export default function Certificates() {
     e.preventDefault()
     setError(null)
     setIssuedChain(null)
+    setPredecessorSuperseded(false)
     setBusy(true)
     try {
-      const result = await certificatesApi.issue({ csr_pem: csrPem, profile_code: profileCode })
-      setIssuedChain(result.chain_pem)
+      if (renewingCert) {
+        const result = await certificatesApi.renew(renewingCert.id, { csr_pem: csrPem })
+        setIssuedChain(result.chain_pem)
+        setPredecessorSuperseded(result.predecessor_superseded)
+        setRenewingCert(null)
+      } else {
+        const result = await certificatesApi.issue({ csr_pem: csrPem, profile_code: profileCode })
+        setIssuedChain(result.chain_pem)
+      }
       setCsrPem('')
       await refresh()
     } catch (err) {
@@ -122,6 +132,14 @@ export default function Certificates() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function handleStartRenew(cert: CertificateSummary) {
+    setError(null)
+    setIssuedChain(null)
+    setCsrPem('')
+    setRenewingCert(cert)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   async function handleView(cert: CertificateSummary) {
@@ -199,21 +217,42 @@ export default function Certificates() {
       )}
 
       <div className={styles.card}>
-        <h2 className={`mb-4 ${styles.sectionTitle}`}>Issue Certificate</h2>
+        <h2 className={`mb-4 ${styles.sectionTitle}`}>
+          {renewingCert ? 'Renew Certificate' : 'Issue Certificate'}
+        </h2>
+        {renewingCert && (
+          <p className={`mb-4 ${styles.warningBanner}`}>
+            Renewing <strong>{commonNameOf(renewingCert.subject_dn) ?? renewingCert.subject_dn}</strong> (
+            {renewingCert.profile_code}). Submit a fresh CSR below — the previous certificate will be
+            marked superseded once the new one issues.{' '}
+            <button type="button" className={styles.link} onClick={() => setRenewingCert(null)}>
+              Cancel renewal
+            </button>
+          </p>
+        )}
         <form className="space-y-4" onSubmit={handleIssue}>
           <div>
             <label className={styles.label}>Profile</label>
-            <select
-              className={styles.input}
-              value={profileCode}
-              onChange={(e) => setProfileCode(e.target.value)}
-            >
-              {PROFILES.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            {renewingCert ? (
+              <input
+                className={`${styles.input} bg-gray-50 text-gray-500`}
+                value={PROFILES.find((p) => p.code === renewingCert.profile_code)?.label ?? renewingCert.profile_code}
+                disabled
+                readOnly
+              />
+            ) : (
+              <select
+                className={styles.input}
+                value={profileCode}
+                onChange={(e) => setProfileCode(e.target.value)}
+              >
+                {PROFILES.map((p) => (
+                  <option key={p.code} value={p.code}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className={styles.label}>CSR (PEM)</label>
@@ -227,7 +266,7 @@ export default function Certificates() {
           </div>
           <CsrGenerator onGenerated={setCsrPem} />
           <button type="submit" disabled={busy} className={styles.button}>
-            Issue certificate
+            {renewingCert ? 'Renew certificate' : 'Issue certificate'}
           </button>
         </form>
         {issuedChain && (
@@ -239,6 +278,9 @@ export default function Certificates() {
               value={issuedChain}
               onFocus={(e) => e.target.select()}
             />
+            {predecessorSuperseded && (
+              <p className={`mt-2 ${styles.successText}`}>Previous certificate marked superseded.</p>
+            )}
           </div>
         )}
       </div>
@@ -366,13 +408,22 @@ export default function Certificates() {
                         Download Chain
                       </button>
                       {cert.status === 'valid' && (
-                        <button
-                          onClick={() => handleRevoke(cert.id)}
-                          disabled={busy}
-                          className={styles.linkDanger}
-                        >
-                          Revoke
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleStartRenew(cert)}
+                            disabled={busy}
+                            className={`mr-3 ${styles.link}`}
+                          >
+                            Renew
+                          </button>
+                          <button
+                            onClick={() => handleRevoke(cert.id)}
+                            disabled={busy}
+                            className={styles.linkDanger}
+                          >
+                            Revoke
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>

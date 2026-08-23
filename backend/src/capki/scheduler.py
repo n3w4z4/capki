@@ -12,13 +12,12 @@ from capki.db.base import utcnow
 from capki.db.models.audit import ActorType
 from capki.db.models.ca import CaStatus, CertificateAuthority
 from capki.db.models.certificates import Certificate, CertificateStatus
+from capki.db.models.users import User
 from capki.db.session import SessionLocal
-from capki.services import revocation_service
+from capki.services import notification_service, revocation_service
 from capki.services.audit_service import log_action
 
 logger = logging.getLogger(__name__)
-
-EXPIRY_WARNING_WINDOW_DAYS = 30
 
 
 def _check_root_auto_relock() -> None:
@@ -48,12 +47,17 @@ def _refresh_all_crls() -> None:
 
 def _check_expiring_certs() -> None:
     """Logs an audit-log entry (visible in the UI's Audit Log tab) for every
-    valid leaf cert and active CA expiring within EXPIRY_WARNING_WINDOW_DAYS.
-    No email/SMTP integration in v1 — this is the simplest thing that makes
-    upcoming expiry actually visible to whoever's watching the UI/logs."""
+    valid leaf cert and active CA expiring within the configured warning
+    window (NotificationConfig.expiry_warning_days, default 30), and emails
+    / Telegrams the requesting user (the cert's owner) once per cert — see
+    Certificate.expiry_notified_at, which dedupes across daily runs and is
+    only set once a channel actually confirms delivery, so a misconfigured
+    SMTP/Telegram setup naturally retries on the next run instead of
+    silently marking it as handled."""
     db = SessionLocal()
     try:
-        cutoff = utcnow() + dt.timedelta(days=EXPIRY_WARNING_WINDOW_DAYS)
+        notif_config = notification_service.get_notification_config(db)
+        cutoff = utcnow() + dt.timedelta(days=notif_config.expiry_warning_days)
 
         expiring_certs = (
             db.query(Certificate)
@@ -70,6 +74,24 @@ def _check_expiring_certs() -> None:
                 target_id=str(cert.id),
                 detail={"subject_dn": cert.subject_dn, "not_after": cert.not_after.isoformat()},
             )
+
+            if cert.expiry_notified_at is not None or cert.requested_by_user_id is None:
+                continue
+            owner = db.get(User, cert.requested_by_user_id)
+            if owner is None:
+                continue
+            if notification_service.notify_expiring_certificate(db, notif_config, cert, owner):
+                cert.expiry_notified_at = utcnow()
+                db.add(cert)
+                db.commit()
+                log_action(
+                    db,
+                    actor_type=ActorType.SYSTEM,
+                    action="cert.expiry_notified",
+                    target_type="certificate",
+                    target_id=str(cert.id),
+                    detail={"owner_user_id": owner.id},
+                )
 
         expiring_cas = (
             db.query(CertificateAuthority)

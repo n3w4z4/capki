@@ -19,6 +19,7 @@ class UserSummary(BaseModel):
     auth_source: str
     role: str | None
     is_active: bool
+    telegram_chat_id: str | None
 
     @classmethod
     def from_model(cls, user: User, role_name: str | None) -> "UserSummary":
@@ -29,6 +30,7 @@ class UserSummary(BaseModel):
             auth_source=user.auth_source.value,
             role=role_name,
             is_active=user.is_active,
+            telegram_chat_id=user.telegram_chat_id,
         )
 
 
@@ -48,6 +50,7 @@ class UpdateUserRequest(BaseModel):
     role: str | None = None
     is_active: bool | None = None
     new_password: str | None = None
+    telegram_chat_id: str | None = None
 
 
 _ERROR_STATUS = {
@@ -112,6 +115,7 @@ def update_user(
             role_name=payload.role,
             is_active=payload.is_active,
             new_password=payload.new_password,
+            telegram_chat_id=payload.telegram_chat_id,
         )
     except user_service.UserManagementError as exc:
         _raise_for(exc)

@@ -18,6 +18,10 @@ export interface IssueCertificateResponse extends CertificateSummary {
   chain_pem: string
 }
 
+export interface RenewCertificateResponse extends IssueCertificateResponse {
+  predecessor_superseded: boolean
+}
+
 export interface CertificateFilters {
   q?: string
   status?: string
@@ -41,4 +45,6 @@ export const certificatesApi = {
     apiClient.post<IssueCertificateResponse>('/api/v1/certificates', payload),
   revoke: (id: number, reason: string) =>
     apiClient.post<CertificateSummary>(`/api/v1/certificates/${id}/revoke`, { reason }),
+  renew: (id: number, payload: { csr_pem: string; validity_days?: number }) =>
+    apiClient.post<RenewCertificateResponse>(`/api/v1/certificates/${id}/renew`, payload),
 }

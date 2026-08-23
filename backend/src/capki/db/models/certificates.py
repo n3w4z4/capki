@@ -38,6 +38,7 @@ class Certificate(TimestampMixin, Base):
     requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     issued_via: Mapped[IssuedVia] = mapped_column(Enum(IssuedVia, native_enum=False))
     api_token_id: Mapped[int | None] = mapped_column(ForeignKey("api_tokens.id"), nullable=True)
+    expiry_notified_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class Revocation(Base):

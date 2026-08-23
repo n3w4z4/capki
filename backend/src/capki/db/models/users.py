@@ -25,6 +25,7 @@ class User(TimestampMixin, Base):
     )
     saml_name_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

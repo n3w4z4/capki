@@ -21,6 +21,39 @@ export interface TlsReplaceResult {
   restarting: boolean
 }
 
+export interface NotificationConfig {
+  expiry_warning_days: number
+  email_enabled: boolean
+  smtp_host: string | null
+  smtp_port: number
+  smtp_username: string | null
+  smtp_password_set: boolean
+  smtp_use_tls: boolean
+  smtp_from_address: string | null
+  telegram_enabled: boolean
+  telegram_bot_token_set: boolean
+}
+
+export interface NotificationConfigUpdate {
+  expiry_warning_days?: number
+  email_enabled?: boolean
+  smtp_host?: string
+  smtp_port?: number
+  smtp_username?: string
+  smtp_password?: string
+  smtp_use_tls?: boolean
+  smtp_from_address?: string
+  telegram_enabled?: boolean
+  telegram_bot_token?: string
+}
+
+export interface NotificationTestResult {
+  email_sent: boolean
+  email_error: string | null
+  telegram_sent: boolean
+  telegram_error: string | null
+}
+
 export const settingsApi = {
   getSaml: () => apiClient.get<SamlConfig>('/api/v1/settings/saml'),
   updateSaml: (payload: Partial<SamlConfig>) =>
@@ -33,4 +66,9 @@ export const settingsApi = {
     }),
   issueTlsFromIntermediate: () =>
     apiClient.post<TlsReplaceResult>('/api/v1/settings/tls/issue-from-intermediate'),
+  getNotifications: () => apiClient.get<NotificationConfig>('/api/v1/settings/notifications'),
+  updateNotifications: (payload: NotificationConfigUpdate) =>
+    apiClient.patch<NotificationConfig>('/api/v1/settings/notifications', payload),
+  testNotifications: () =>
+    apiClient.post<NotificationTestResult>('/api/v1/settings/notifications/test'),
 }

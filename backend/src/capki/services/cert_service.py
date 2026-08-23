@@ -23,6 +23,7 @@ from capki.db.models.audit import ActorType
 from capki.db.models.ca import CertificateAuthority
 from capki.db.models.certificates import Certificate, CertificateStatus, IssuedVia
 from capki.db.models.profiles import CertProfile
+from capki.services import revocation_service
 from capki.services.audit_service import log_action
 from capki.services.ca_service import get_active_intermediate, get_root
 
@@ -183,3 +184,48 @@ def issue_certificate(
         return row
 
     raise CertIssuanceError("serial_allocation_failed")
+
+
+def renew_certificate(
+    db: Session,
+    *,
+    predecessor_cert_id: int,
+    csr_pem: str,
+    requested_by_user_id: int | None,
+    issued_via: IssuedVia,
+    api_token_id: int | None = None,
+    validity_days: int | None = None,
+) -> tuple[Certificate, bool]:
+    """Issues a new certificate reusing the predecessor's profile, then
+    best-effort marks the predecessor revoked with reason=superseded — the
+    CRL reason code that exists precisely for "replaced, not compromised",
+    as opposed to a real revocation. The predecessor's key/CSR is never
+    reused; the caller must submit a fresh CSR proving current possession of
+    whatever key the replacement will use. If the predecessor is already
+    revoked/expired, superseding is skipped (not an error) since there's
+    nothing meaningful left to supersede. Returns (new_cert, superseded)."""
+    predecessor = db.get(Certificate, predecessor_cert_id)
+    if predecessor is None:
+        raise CertIssuanceError("predecessor_not_found")
+
+    new_cert = issue_certificate(
+        db,
+        csr_pem=csr_pem,
+        profile_code=predecessor.profile_code,
+        requested_by_user_id=requested_by_user_id,
+        issued_via=issued_via,
+        api_token_id=api_token_id,
+        validity_days=validity_days,
+    )
+
+    superseded = False
+    if predecessor.status == CertificateStatus.VALID:
+        try:
+            revocation_service.revoke_certificate(
+                db, cert_id=predecessor.id, reason="superseded", revoked_by_user_id=requested_by_user_id
+            )
+            superseded = True
+        except revocation_service.RevocationError:
+            pass
+
+    return new_cert, superseded

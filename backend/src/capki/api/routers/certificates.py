@@ -57,6 +57,15 @@ class RevokeCertificateRequest(BaseModel):
     reason: str = "unspecified"
 
 
+class RenewCertificateRequest(BaseModel):
+    csr_pem: str
+    validity_days: int | None = None
+
+
+class RenewCertificateResponse(IssueCertificateResponse):
+    predecessor_superseded: bool
+
+
 _ERROR_STATUS = {
     "intermediate_not_ready": status.HTTP_503_SERVICE_UNAVAILABLE,
     "unknown_profile": status.HTTP_400_BAD_REQUEST,
@@ -68,6 +77,7 @@ _ERROR_STATUS = {
     "email_required": status.HTTP_400_BAD_REQUEST,
     "validity_exceeds_profile_max": status.HTTP_400_BAD_REQUEST,
     "certificate_not_found": status.HTTP_404_NOT_FOUND,
+    "predecessor_not_found": status.HTTP_404_NOT_FOUND,
     "already_revoked": status.HTTP_409_CONFLICT,
     "invalid_reason": status.HTTP_400_BAD_REQUEST,
 }
@@ -163,6 +173,37 @@ def issue_certificate(
     summary = CertificateSummary.from_model(cert)
     return IssueCertificateResponse(
         **summary.model_dump(), certificate_pem=cert.certificate_pem, chain_pem=cert_service.build_chain_pem(db, cert)
+    )
+
+
+@router.post("/{cert_id}/renew", response_model=RenewCertificateResponse, status_code=status.HTTP_201_CREATED)
+def renew_certificate(
+    cert_id: int,
+    payload: RenewCertificateRequest,
+    db: Session = Depends(get_db),
+    actor: AuthContext = Depends(require_permission(CERT_ISSUE)),
+):
+    try:
+        cert, superseded = cert_service.renew_certificate(
+            db,
+            predecessor_cert_id=cert_id,
+            csr_pem=payload.csr_pem,
+            requested_by_user_id=actor.user_id,
+            issued_via=IssuedVia.UI if actor.auth_method == "session" else IssuedVia.API,
+            api_token_id=actor.token_id,
+            validity_days=payload.validity_days,
+        )
+    except cert_service.CertIssuanceError as exc:
+        raise HTTPException(
+            status_code=_ERROR_STATUS.get(str(exc), status.HTTP_400_BAD_REQUEST), detail=str(exc)
+        ) from exc
+
+    summary = CertificateSummary.from_model(cert)
+    return RenewCertificateResponse(
+        **summary.model_dump(),
+        certificate_pem=cert.certificate_pem,
+        chain_pem=cert_service.build_chain_pem(db, cert),
+        predecessor_superseded=superseded,
     )
 
 

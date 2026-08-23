@@ -84,6 +84,19 @@ export default function Users() {
     }
   }
 
+  async function handleTelegramChatIdChange(id: number, value: string) {
+    setError(null)
+    setBusy(true)
+    try {
+      await usersApi.update(id, { telegram_chat_id: value })
+      await refresh()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update Telegram chat ID.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleToggleActive(user: UserSummary) {
     setError(null)
     setBusy(true)
@@ -172,6 +185,7 @@ export default function Users() {
                 <th className="py-2 pr-4 font-medium">Auth</th>
                 <th className="py-2 pr-4 font-medium">Role</th>
                 <th className="py-2 pr-4 font-medium">Status</th>
+                <th className="py-2 pr-4 font-medium whitespace-nowrap">Telegram Chat ID</th>
                 <th className="py-2 font-medium"></th>
               </tr>
             </thead>
@@ -199,6 +213,20 @@ export default function Users() {
                     <span className={badgeClass(u.is_active ? 'green' : 'gray')}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
+                  </td>
+                  <td className="py-2 pr-4">
+                    <input
+                      key={u.telegram_chat_id ?? ''}
+                      className={`${styles.input} mt-0 w-32 py-1`}
+                      placeholder="not set"
+                      defaultValue={u.telegram_chat_id ?? ''}
+                      disabled={busy}
+                      onBlur={(e) => {
+                        if (e.target.value !== (u.telegram_chat_id ?? '')) {
+                          handleTelegramChatIdChange(u.id, e.target.value)
+                        }
+                      }}
+                    />
                   </td>
                   <td className="py-2 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -229,7 +257,7 @@ export default function Users() {
               ))}
               {resettingId !== null && (
                 <tr className={styles.tableRow}>
-                  <td colSpan={6} className="py-3">
+                  <td colSpan={7} className="py-3">
                     <form
                       className="flex items-end gap-3"
                       onSubmit={(e) => handleResetPassword(e, resettingId)}

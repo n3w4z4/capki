@@ -7,6 +7,7 @@ export interface UserSummary {
   auth_source: string
   role: string | null
   is_active: boolean
+  telegram_chat_id: string | null
 }
 
 export interface RoleSummary {
@@ -21,7 +22,7 @@ export const usersApi = {
     apiClient.post<UserSummary>('/api/v1/users', payload),
   update: (
     id: number,
-    payload: { role?: string; is_active?: boolean; new_password?: string }
+    payload: { role?: string; is_active?: boolean; new_password?: string; telegram_chat_id?: string }
   ) => apiClient.patch<UserSummary>(`/api/v1/users/${id}`, payload),
   deactivate: (id: number) => apiClient.delete<UserSummary>(`/api/v1/users/${id}`),
 }

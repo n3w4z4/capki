@@ -187,6 +187,7 @@ def update_user(
     role_name: str | None = None,
     is_active: bool | None = None,
     new_password: str | None = None,
+    telegram_chat_id: str | None = None,
 ) -> User:
     user = db.get(User, user_id)
     if user is None:
@@ -214,6 +215,9 @@ def update_user(
             raise UserManagementError("not_a_local_user")
         user.password_hash = hash_password(new_password)
 
+    if telegram_chat_id is not None:
+        user.telegram_chat_id = telegram_chat_id or None
+
     db.commit()
     log_action(
         db,
@@ -222,7 +226,12 @@ def update_user(
         action="user.update",
         target_type="user",
         target_id=str(user.id),
-        detail={"role": role_name, "is_active": is_active, "password_reset": new_password is not None},
+        detail={
+            "role": role_name,
+            "is_active": is_active,
+            "password_reset": new_password is not None,
+            "telegram_chat_id_changed": telegram_chat_id is not None,
+        },
     )
     return user
 

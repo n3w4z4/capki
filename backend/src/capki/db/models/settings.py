@@ -46,6 +46,33 @@ class SamlConfig(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
 
 
+class NotificationConfig(Base):
+    """Singleton row (id=1) holding email/Telegram delivery settings for
+    certificate-expiry notifications. `smtp_password`/`telegram_bot_token`
+    are stored envelope-encrypted with the app master key (see
+    core/crypto/envelope.py), same as the CA/TLS private keys."""
+
+    __tablename__ = "notification_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    expiry_warning_days: Mapped[int] = mapped_column(Integer, default=30)
+
+    email_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int] = mapped_column(Integer, default=587)
+    smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    smtp_password_wrap_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True)
+    smtp_from_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    telegram_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_bot_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    telegram_bot_token_wrap_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
