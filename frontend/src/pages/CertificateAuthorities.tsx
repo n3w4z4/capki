@@ -14,12 +14,12 @@ export default function CertificateAuthorities() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const [rootCommonName, setRootCommonName] = useState('kunai.org Root CA')
-  const [rootOrg, setRootOrg] = useState('kunai.org')
+  const [rootCommonName, setRootCommonName] = useState('')
+  const [rootOrg, setRootOrg] = useState('')
   const [rootPassphrase, setRootPassphrase] = useState('')
 
-  const [intermediateCommonName, setIntermediateCommonName] = useState('kunai.org Intermediate CA')
-  const [intermediateOrg, setIntermediateOrg] = useState('kunai.org')
+  const [intermediateCommonName, setIntermediateCommonName] = useState('')
+  const [intermediateOrg, setIntermediateOrg] = useState('')
 
   const [unlockPassphrase, setUnlockPassphrase] = useState('')
 
@@ -136,6 +136,7 @@ export default function CertificateAuthorities() {
               <label className={styles.label}>Common name</label>
               <input
                 className={styles.input}
+                placeholder="Example Root CA"
                 value={rootCommonName}
                 onChange={(e) => setRootCommonName(e.target.value)}
               />
@@ -144,6 +145,7 @@ export default function CertificateAuthorities() {
               <label className={styles.label}>Organization</label>
               <input
                 className={styles.input}
+                placeholder="Example Org"
                 value={rootOrg}
                 onChange={(e) => setRootOrg(e.target.value)}
               />
@@ -210,6 +212,7 @@ export default function CertificateAuthorities() {
               <label className={styles.label}>Common name</label>
               <input
                 className={styles.input}
+                placeholder="Example Intermediate CA"
                 value={intermediateCommonName}
                 onChange={(e) => setIntermediateCommonName(e.target.value)}
               />
@@ -218,6 +221,7 @@ export default function CertificateAuthorities() {
               <label className={styles.label}>Organization</label>
               <input
                 className={styles.input}
+                placeholder="Example Org"
                 value={intermediateOrg}
                 onChange={(e) => setIntermediateOrg(e.target.value)}
               />

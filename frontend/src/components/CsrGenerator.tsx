@@ -24,7 +24,7 @@ function downloadText(text: string, filename: string): void {
 export default function CsrGenerator({ onGenerated }: Props) {
   const [open, setOpen] = useState(false)
   const [commonName, setCommonName] = useState('')
-  const [organization, setOrganization] = useState('kunai.org')
+  const [organization, setOrganization] = useState('')
   const [sansText, setSansText] = useState('')
   const [encryptKey, setEncryptKey] = useState(false)
   const [passphrase, setPassphrase] = useState('')
@@ -154,6 +154,7 @@ export default function CsrGenerator({ onGenerated }: Props) {
             <label className={styles.label}>Organization</label>
             <input
               className={styles.input}
+              placeholder="Example Org"
               value={organization}
               onChange={(e) => setOrganization(e.target.value)}
             />
@@ -165,7 +166,7 @@ export default function CsrGenerator({ onGenerated }: Props) {
           </label>
           <input
             className={styles.input}
-            placeholder="svc.kunai.org, www.svc.kunai.org, 10.0.0.5"
+            placeholder="svc.example.org, www.svc.example.org, 10.0.0.5"
             value={sansText}
             onChange={(e) => setSansText(e.target.value)}
           />

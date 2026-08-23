@@ -1,7 +1,7 @@
 [project]
 name = "capki"
 version = "0.1.0"
-description = "kunai.org self-hosted PKI management service"
+description = "Self-hosted PKI management service"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

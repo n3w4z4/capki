@@ -1,9 +1,8 @@
 # capki
 
-Self-hosted PKI management app for kunai.org — replaces the flat-file OpenSSL CA in `../root` /
-`../intermediate` with a web UI, local + SAML (Entra ID) auth, RBAC, and a token-authenticated REST API
-for automated certificate issuance. It mints its own fresh root + intermediate CA hierarchy; the legacy
-`../root` / `../intermediate` / `../others` material is untouched, historical-only.
+Self-hosted PKI management app — a web UI for running your own internal root + intermediate CA
+hierarchy, with local + SAML (Entra ID) auth, RBAC, and a token-authenticated REST API for automated
+certificate issuance. Useful as a lightweight alternative to a flat-file OpenSSL CA setup.
 
 ## Running with Docker (production)
 
