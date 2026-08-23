@@ -22,6 +22,7 @@ class AuditLogEntrySummary(BaseModel):
     target_id: str | None
     success: bool
     detail: dict | None
+    ip_address: str | None
 
 
 @router.get("", response_model=list[AuditLogEntrySummary])
@@ -50,6 +51,7 @@ def list_audit_log(
             target_id=e.target_id,
             success=e.success,
             detail=e.detail,
+            ip_address=e.ip_address,
         )
         for e in entries
     ]

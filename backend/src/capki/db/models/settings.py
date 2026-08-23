@@ -73,6 +73,43 @@ class NotificationConfig(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
 
 
+class LogForwardingConfig(Base):
+    """Singleton row (id=1) holding external log-forwarding settings —
+    application logs and/or audit-log entries mirrored out to a Splunk/Cribl
+    HTTP Event Collector and/or a syslog receiver, as JSON. `hec_token` is
+    stored envelope-encrypted with the app master key (see
+    core/crypto/envelope.py), same as the SMTP password / Telegram bot
+    token. HEC and syslog are independently enabled and independently
+    choose which stream(s) they receive."""
+
+    __tablename__ = "log_forwarding_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+
+    app_log_min_level: Mapped[str] = mapped_column(String(16), default="WARNING")
+
+    hec_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    hec_send_app_logs: Mapped[bool] = mapped_column(Boolean, default=True)
+    hec_send_audit_logs: Mapped[bool] = mapped_column(Boolean, default=True)
+    hec_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    hec_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    hec_token_wrap_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    hec_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hec_sourcetype: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hec_index: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hec_verify_tls: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    syslog_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    syslog_send_app_logs: Mapped[bool] = mapped_column(Boolean, default=True)
+    syslog_send_audit_logs: Mapped[bool] = mapped_column(Boolean, default=True)
+    syslog_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    syslog_port: Mapped[int] = mapped_column(Integer, default=514)
+    syslog_protocol: Mapped[str] = mapped_column(String(16), default="udp")  # udp | tcp | tcp_tls
+    syslog_facility: Mapped[int] = mapped_column(Integer, default=16)  # local0
+
+    updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

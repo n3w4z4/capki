@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,6 +22,7 @@ from capki.config import settings
 from capki.core.crypto.key_vault import key_vault
 from capki.db.session import SessionLocal
 from capki.scheduler import start_scheduler
+from capki.services import audit_service, log_forwarding_service
 from capki.services.user_service import bootstrap_initial_admin
 
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,7 @@ async def lifespan(_app: FastAPI):
     try:
         bootstrap_initial_admin(db)
         key_vault.load_intermediate(db)
+        log_forwarding_service.start(db)
     finally:
         db.close()
 
@@ -52,6 +54,24 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def _capture_request_ip(request: Request, call_next):
+    """Stashes the requester's IP in a contextvar so audit_service.log_action
+    (called deep inside various service functions, not just here) can attach
+    it without every call site threading it through explicitly. Uses the raw
+    TCP peer address rather than X-Forwarded-For — this app has no reverse
+    proxy in front of it by default (docker-compose maps the host port
+    straight to the container), and blindly trusting a client-supplied
+    header would let a client spoof its own IP in the audit trail."""
+    ip = request.client.host if request.client else None
+    token = audit_service.set_request_ip(ip)
+    try:
+        return await call_next(request)
+    finally:
+        audit_service.reset_request_ip(token)
+
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")

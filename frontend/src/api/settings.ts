@@ -54,6 +54,53 @@ export interface NotificationTestResult {
   telegram_error: string | null
 }
 
+export interface LogForwardingConfig {
+  app_log_min_level: string
+  hec_enabled: boolean
+  hec_send_app_logs: boolean
+  hec_send_audit_logs: boolean
+  hec_url: string | null
+  hec_token_set: boolean
+  hec_source: string | null
+  hec_sourcetype: string | null
+  hec_index: string | null
+  hec_verify_tls: boolean
+  syslog_enabled: boolean
+  syslog_send_app_logs: boolean
+  syslog_send_audit_logs: boolean
+  syslog_host: string | null
+  syslog_port: number
+  syslog_protocol: string
+  syslog_facility: number
+}
+
+export interface LogForwardingConfigUpdate {
+  app_log_min_level?: string
+  hec_enabled?: boolean
+  hec_send_app_logs?: boolean
+  hec_send_audit_logs?: boolean
+  hec_url?: string
+  hec_token?: string
+  hec_source?: string
+  hec_sourcetype?: string
+  hec_index?: string
+  hec_verify_tls?: boolean
+  syslog_enabled?: boolean
+  syslog_send_app_logs?: boolean
+  syslog_send_audit_logs?: boolean
+  syslog_host?: string
+  syslog_port?: number
+  syslog_protocol?: string
+  syslog_facility?: number
+}
+
+export interface LogForwardingTestResult {
+  hec_sent: boolean
+  hec_error: string | null
+  syslog_sent: boolean
+  syslog_error: string | null
+}
+
 export const settingsApi = {
   getSaml: () => apiClient.get<SamlConfig>('/api/v1/settings/saml'),
   updateSaml: (payload: Partial<SamlConfig>) =>
@@ -71,4 +118,9 @@ export const settingsApi = {
     apiClient.patch<NotificationConfig>('/api/v1/settings/notifications', payload),
   testNotifications: () =>
     apiClient.post<NotificationTestResult>('/api/v1/settings/notifications/test'),
+  getLogForwarding: () => apiClient.get<LogForwardingConfig>('/api/v1/settings/log-forwarding'),
+  updateLogForwarding: (payload: LogForwardingConfigUpdate) =>
+    apiClient.patch<LogForwardingConfig>('/api/v1/settings/log-forwarding', payload),
+  testLogForwarding: () =>
+    apiClient.post<LogForwardingTestResult>('/api/v1/settings/log-forwarding/test'),
 }

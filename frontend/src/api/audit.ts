@@ -10,6 +10,7 @@ export interface AuditLogEntry {
   target_id: string | null
   success: boolean
   detail: Record<string, unknown> | null
+  ip_address: string | null
 }
 
 export const auditApi = {

@@ -36,6 +36,7 @@ export default function AuditLog() {
                   <th className="py-2 pr-4 font-medium">Actor</th>
                   <th className="py-2 pr-4 font-medium">Action</th>
                   <th className="py-2 pr-4 font-medium">Target</th>
+                  <th className="py-2 pr-4 font-medium">IP</th>
                   <th className="py-2 font-medium">Result</th>
                 </tr>
               </thead>
@@ -50,6 +51,7 @@ export default function AuditLog() {
                     <td className="py-2 pr-4 text-gray-700">
                       {e.target_type ? `${e.target_type} #${e.target_id}` : '—'}
                     </td>
+                    <td className="py-2 pr-4 font-mono text-xs text-gray-500">{e.ip_address ?? '—'}</td>
                     <td className="py-2">
                       <span className={badgeClass(e.success ? 'green' : 'red')}>
                         {e.success ? 'ok' : 'failed'}

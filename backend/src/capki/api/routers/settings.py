@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from capki.api.deps import require_permission
 from capki.core.rbac.context import AuthContext
 from capki.core.rbac.permissions import SETTINGS_MANAGE, SETTINGS_READ
-from capki.db.models.settings import NotificationConfig, SamlConfig, TlsListenerConfig
+from capki.db.base import utcnow
+from capki.db.models.settings import LogForwardingConfig, NotificationConfig, SamlConfig, TlsListenerConfig
 from capki.db.models.users import User
 from capki.db.session import get_db
-from capki.services import notification_service, settings_service, tls_service
+from capki.services import log_forwarding_service, notification_service, settings_service, tls_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -274,4 +275,136 @@ def test_notification_settings(
         email_error=email_error,
         telegram_sent=telegram_sent,
         telegram_error=telegram_error,
+    )
+
+
+class LogForwardingConfigResponse(BaseModel):
+    app_log_min_level: str
+    hec_enabled: bool
+    hec_send_app_logs: bool
+    hec_send_audit_logs: bool
+    hec_url: str | None
+    hec_token_set: bool
+    hec_source: str | None
+    hec_sourcetype: str | None
+    hec_index: str | None
+    hec_verify_tls: bool
+    syslog_enabled: bool
+    syslog_send_app_logs: bool
+    syslog_send_audit_logs: bool
+    syslog_host: str | None
+    syslog_port: int
+    syslog_protocol: str
+    syslog_facility: int
+
+    @classmethod
+    def from_model(cls, config: LogForwardingConfig) -> "LogForwardingConfigResponse":
+        return cls(
+            app_log_min_level=config.app_log_min_level,
+            hec_enabled=config.hec_enabled,
+            hec_send_app_logs=config.hec_send_app_logs,
+            hec_send_audit_logs=config.hec_send_audit_logs,
+            hec_url=config.hec_url,
+            hec_token_set=config.hec_token_encrypted is not None,
+            hec_source=config.hec_source,
+            hec_sourcetype=config.hec_sourcetype,
+            hec_index=config.hec_index,
+            hec_verify_tls=config.hec_verify_tls,
+            syslog_enabled=config.syslog_enabled,
+            syslog_send_app_logs=config.syslog_send_app_logs,
+            syslog_send_audit_logs=config.syslog_send_audit_logs,
+            syslog_host=config.syslog_host,
+            syslog_port=config.syslog_port,
+            syslog_protocol=config.syslog_protocol,
+            syslog_facility=config.syslog_facility,
+        )
+
+
+class LogForwardingConfigUpdate(BaseModel):
+    app_log_min_level: str | None = None
+    hec_enabled: bool | None = None
+    hec_send_app_logs: bool | None = None
+    hec_send_audit_logs: bool | None = None
+    hec_url: str | None = None
+    hec_token: str | None = None  # blank/omitted = leave the stored secret unchanged
+    hec_source: str | None = None
+    hec_sourcetype: str | None = None
+    hec_index: str | None = None
+    hec_verify_tls: bool | None = None
+    syslog_enabled: bool | None = None
+    syslog_send_app_logs: bool | None = None
+    syslog_send_audit_logs: bool | None = None
+    syslog_host: str | None = None
+    syslog_port: int | None = None
+    syslog_protocol: str | None = None
+    syslog_facility: int | None = None
+
+
+class LogForwardingTestResponse(BaseModel):
+    hec_sent: bool
+    hec_error: str | None
+    syslog_sent: bool
+    syslog_error: str | None
+
+
+@router.get("/log-forwarding", response_model=LogForwardingConfigResponse)
+def get_log_forwarding_settings(
+    db: Session = Depends(get_db), _actor: AuthContext = Depends(require_permission(SETTINGS_READ))
+):
+    return LogForwardingConfigResponse.from_model(log_forwarding_service.get_log_forwarding_config(db))
+
+
+@router.patch("/log-forwarding", response_model=LogForwardingConfigResponse)
+def update_log_forwarding_settings(
+    payload: LogForwardingConfigUpdate,
+    db: Session = Depends(get_db),
+    _actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    try:
+        config = log_forwarding_service.update_log_forwarding_config(db, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return LogForwardingConfigResponse.from_model(config)
+
+
+@router.post("/log-forwarding/test", response_model=LogForwardingTestResponse)
+def test_log_forwarding_settings(
+    db: Session = Depends(get_db),
+    _actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    """Sends one synthetic test event straight to each enabled output
+    (bypassing the queue, so failures surface in this response instead of
+    silently in the background worker's debug log)."""
+    config = log_forwarding_service.get_log_forwarding_config(db)
+    test_event = {
+        "timestamp": utcnow().isoformat(),
+        "level": "INFO",
+        "logger": "capki.settings",
+        "message": "capki log forwarding test event",
+    }
+
+    hec_sent = False
+    hec_error: str | None = None
+    if not config.hec_enabled:
+        hec_error = "hec_disabled_in_saved_settings"
+    else:
+        try:
+            log_forwarding_service.send_hec_event(config, test_event)
+            hec_sent = True
+        except Exception as exc:
+            hec_error = str(exc) or exc.__class__.__name__
+
+    syslog_sent = False
+    syslog_error: str | None = None
+    if not config.syslog_enabled:
+        syslog_error = "syslog_disabled_in_saved_settings"
+    else:
+        try:
+            log_forwarding_service.send_syslog_event(config, test_event, severity=6, msgid="test")
+            syslog_sent = True
+        except Exception as exc:
+            syslog_error = str(exc) or exc.__class__.__name__
+
+    return LogForwardingTestResponse(
+        hec_sent=hec_sent, hec_error=hec_error, syslog_sent=syslog_sent, syslog_error=syslog_error
     )
