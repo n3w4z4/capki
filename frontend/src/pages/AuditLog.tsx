@@ -49,7 +49,9 @@ export default function AuditLog() {
                     <td className="py-2 pr-4 text-gray-900">{e.actor_username ?? e.actor_type}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-gray-700">{e.action}</td>
                     <td className="py-2 pr-4 text-gray-700">
-                      {e.target_type ? `${e.target_type} #${e.target_id}` : '—'}
+                      {e.target_type
+                        ? (e.target_label ?? `${e.target_type} #${e.target_id}`)
+                        : '—'}
                     </td>
                     <td className="py-2 pr-4 font-mono text-xs text-gray-500">{e.ip_address ?? '—'}</td>
                     <td className="py-2">

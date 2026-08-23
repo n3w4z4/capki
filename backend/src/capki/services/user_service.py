@@ -219,6 +219,17 @@ def update_user(
         user.telegram_chat_id = telegram_chat_id or None
 
     db.commit()
+
+    detail: dict[str, object] = {}
+    if role_name is not None:
+        detail["role"] = role_name
+    if is_active is not None:
+        detail["is_active"] = is_active
+    if new_password is not None:
+        detail["password_reset"] = True
+    if telegram_chat_id is not None:
+        detail["telegram_chat_id_changed"] = True
+
     log_action(
         db,
         actor_type=ActorType.USER,
@@ -226,12 +237,7 @@ def update_user(
         action="user.update",
         target_type="user",
         target_id=str(user.id),
-        detail={
-            "role": role_name,
-            "is_active": is_active,
-            "password_reset": new_password is not None,
-            "telegram_chat_id_changed": telegram_chat_id is not None,
-        },
+        detail=detail or None,
     )
     return user
 

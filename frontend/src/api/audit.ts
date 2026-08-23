@@ -8,6 +8,7 @@ export interface AuditLogEntry {
   action: string
   target_type: string | null
   target_id: string | null
+  target_label: string | null
   success: boolean
   detail: Record<string, unknown> | null
   ip_address: string | null
