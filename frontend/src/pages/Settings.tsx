@@ -4,9 +4,10 @@ import {
   type LogForwardingTestResult,
   type NotificationTestResult,
   type TlsStatus,
+  type TrustedCa,
 } from '../api/settings'
 import { ApiError } from '../api/client'
-import { styles } from '../ui/styles'
+import { badgeClass, styles } from '../ui/styles'
 
 function roleMapToText(map: Record<string, string> | null): string {
   return Object.entries(map ?? {})
@@ -734,6 +735,241 @@ function LogForwardingSettingsCard() {
   )
 }
 
+const TRUST_ERROR_MESSAGES: Record<string, string> = {
+  invalid_pem: 'That does not look like a valid PEM certificate.',
+  not_a_ca: 'That certificate is not a CA (its Basic Constraints do not allow it to sign others).',
+  duplicate: 'That certificate is already in the trust store.',
+  no_certificates: 'No PEM certificate was found in what you pasted.',
+  url_must_be_https: 'Enter an https:// URL.',
+}
+
+function describeTrustError(code: string | null): string {
+  if (!code) return 'Unknown error.'
+  return TRUST_ERROR_MESSAGES[code] ?? code
+}
+
+function shortFingerprint(fp: string): string {
+  const tail = fp.split(':').slice(-8).join(':')
+  return `…${tail}`
+}
+
+function TrustedCaCard() {
+  const [cas, setCas] = useState<TrustedCa[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [pem, setPem] = useState('')
+  const [label, setLabel] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const [testUrl, setTestUrl] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    settingsApi
+      .getTrustedCas()
+      .then(setCas)
+      .catch((err) =>
+        setError(err instanceof ApiError ? err.message : 'Failed to load trusted CAs.'),
+      )
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(load, [load])
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setNotice(null)
+    setBusy(true)
+    try {
+      const added = await settingsApi.addTrustedCa(pem, label.trim() || undefined)
+      setNotice(
+        added.length === 0
+          ? 'Nothing added — already present.'
+          : `Added ${added.length} certificate(s): ${added.map((c) => c.subject_dn).join(', ')}`,
+      )
+      setPem('')
+      setLabel('')
+      load()
+    } catch (err) {
+      setError(err instanceof ApiError ? describeTrustError(err.message) : 'Failed to add certificate.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleToggle(ca: TrustedCa) {
+    setError(null)
+    try {
+      await settingsApi.updateTrustedCa(ca.id, { enabled: !ca.enabled })
+      load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update certificate.')
+    }
+  }
+
+  async function handleRemove(ca: TrustedCa) {
+    if (!window.confirm(`Remove trusted CA "${ca.label || ca.subject_dn}"?`)) return
+    setError(null)
+    try {
+      await settingsApi.deleteTrustedCa(ca.id)
+      load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove certificate.')
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await settingsApi.testTrustedCaUrl(testUrl)
+      setTestResult(
+        result.ok ? 'TLS verified — capki trusts this endpoint.' : describeTrustError(result.error),
+      )
+    } catch (err) {
+      setTestResult(err instanceof ApiError ? err.message : 'Test failed.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className={styles.card}>
+      <h2 className={`mb-4 ${styles.sectionTitle}`}>Trusted CA Certificates</h2>
+      <p className={`mb-4 ${styles.mutedXs}`}>
+        Certificates added here are trusted when capki makes outbound TLS connections — expiry
+        notifications (SMTP, Telegram) and log forwarding (Splunk HEC, TLS syslog). Use this to reach a
+        service that sits behind a private root CA, instead of baking that CA into the container image.
+        The operating system trust store is always trusted in addition to these.
+      </p>
+
+      {error && <p className={`mb-4 ${styles.errorBanner}`}>{error}</p>}
+      {notice && <p className={`mb-4 ${styles.warningBanner}`}>{notice}</p>}
+
+      {loading ? (
+        <p className={styles.muted}>Loading…</p>
+      ) : cas.length === 0 ? (
+        <p className={`mb-4 ${styles.muted}`}>No custom CA certificates added.</p>
+      ) : (
+        <table className="mb-4 w-full text-sm">
+          <thead>
+            <tr className={styles.tableHeadRow}>
+              <th className="py-2 pr-3">Subject</th>
+              <th className="py-2 pr-3">Fingerprint (SHA-256)</th>
+              <th className="py-2 pr-3">Expires</th>
+              <th className="py-2 pr-3">Status</th>
+              <th className="py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {cas.map((ca) => {
+              const expiry = new Date(ca.not_after)
+              const expired = expiry.getTime() < Date.now()
+              const soon = !expired && expiry.getTime() - Date.now() < 30 * 864e5
+              return (
+                <tr key={ca.id} className={styles.tableRow}>
+                  <td className="py-2 pr-3">
+                    <div className="text-gray-900">{ca.label || ca.subject_dn}</div>
+                    {ca.label && <div className={styles.mutedXs}>{ca.subject_dn}</div>}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-xs text-gray-500">
+                    {shortFingerprint(ca.sha256_fingerprint)}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span
+                      className={
+                        expired
+                          ? badgeClass('red')
+                          : soon
+                            ? badgeClass('amber')
+                            : badgeClass('gray')
+                      }
+                    >
+                      {expiry.toLocaleDateString()}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-3">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={ca.enabled}
+                        onChange={() => handleToggle(ca)}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      {ca.enabled ? 'Trusted' : 'Disabled'}
+                    </label>
+                  </td>
+                  <td className="py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(ca)}
+                      className={styles.linkDanger}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      <form className="space-y-4 border-t border-gray-200 pt-4" onSubmit={handleAdd}>
+        <p className={styles.label}>Add a CA certificate</p>
+        <div>
+          <label className={styles.label}>Certificate (PEM — one, or a chain/bundle)</label>
+          <textarea
+            className={`${styles.input} h-28 font-mono text-xs`}
+            placeholder={'-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----'}
+            value={pem}
+            onChange={(e) => setPem(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label className={styles.label}>Label (optional)</label>
+          <input
+            className={styles.input}
+            placeholder="e.g. Kunai Root CA"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+        </div>
+        <button type="submit" disabled={busy} className={styles.button}>
+          Add certificate
+        </button>
+      </form>
+
+      <div className="mt-4 space-y-2 border-t border-gray-200 pt-4">
+        <label className={styles.label}>Test a URL against the current trust store</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="url"
+            className={styles.input}
+            placeholder="https://internal-service.example"
+            value={testUrl}
+            onChange={(e) => setTestUrl(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing || !testUrl}
+            className={styles.buttonSecondary}
+          >
+            Test
+          </button>
+        </div>
+        {testResult && <p className={styles.mutedXs}>{testResult}</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -790,6 +1026,7 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <TlsSettingsCard />
+      <TrustedCaCard />
       <NotificationsSettingsCard />
       <LogForwardingSettingsCard />
 

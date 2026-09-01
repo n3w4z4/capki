@@ -110,6 +110,35 @@ class LogForwardingConfig(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
 
 
+class TrustedCaCert(Base):
+    """An extra CA certificate that capki trusts when it makes *outbound*
+    TLS connections (Telegram, log forwarding, SMTP) — on top of the OS
+    trust store. Lets an operator trust a service that sits behind a
+    private/internal root CA without baking that CA into the image. These
+    are public certificates, so — unlike the secrets elsewhere in this
+    file — nothing here is envelope-encrypted.
+
+    Not a singleton: one row per certificate. `sha256_fingerprint` is
+    unique so the same cert can't be added twice.
+    """
+
+    __tablename__ = "trusted_ca_certs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    certificate_pem: Mapped[str] = mapped_column(Text)
+    subject_dn: Mapped[str] = mapped_column(String(500))
+    issuer_dn: Mapped[str] = mapped_column(String(500))
+    serial_hex: Mapped[str] = mapped_column(String(80))
+    sha256_fingerprint: Mapped[str] = mapped_column(String(95), unique=True)
+    not_before: Mapped[dt.datetime] = mapped_column(UTCDateTime())
+    not_after: Mapped[dt.datetime] = mapped_column(UTCDateTime())
+    is_self_signed: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    added_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    added_at: Mapped[dt.datetime] = mapped_column(UTCDateTime())
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

@@ -60,6 +60,9 @@ approval flow, an audit log — to be trustworthy, without the operational weigh
 - 📋 **An audit log** of who did what — issued, revoked, approved a request, changed a setting, and so on.
 - 🌐 **Manages its own TLS certificate**, too — starts with a self-signed one on first boot, and you can
   later replace it with one signed by your own intermediate CA, or upload your own.
+- 🔗 **Trusts extra CA certificates for its own outbound calls** — add a private root/intermediate CA
+  from Settings and capki will trust it when connecting to SMTP, Telegram, or a log collector, without
+  rebuilding the image.
 
 It runs as a single container backed by SQLite — no external database or extra services to stand up.
 
@@ -102,6 +105,10 @@ Environment variables (see `docker-compose.yml` / `backend/src/capki/config.py`)
    certificate once it's within the configured warning window, default 30 days — set a user's Telegram
    Chat ID from the **Users** tab), and/or forward application + audit logs (JSON, UTC timestamps,
    audit entries include the requester's IP) to a Splunk/Cribl HTTP Event Collector and/or syslog.
+   The **Trusted CA Certificates** section lets you paste in extra root/intermediate CA certificates
+   that capki should trust when it makes those outbound connections (SMTP, Telegram, HEC, TLS syslog)
+   — use it to reach a service that sits behind a private CA instead of baking that CA into the image.
+   Added certificates persist in the `capki-data` volume and take effect immediately (no restart).
 
 ## Operations runbook
 

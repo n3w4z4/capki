@@ -10,10 +10,22 @@ from capki.api.deps import require_permission
 from capki.core.rbac.context import AuthContext
 from capki.core.rbac.permissions import SETTINGS_MANAGE, SETTINGS_READ
 from capki.db.base import utcnow
-from capki.db.models.settings import LogForwardingConfig, NotificationConfig, SamlConfig, TlsListenerConfig
+from capki.db.models.settings import (
+    LogForwardingConfig,
+    NotificationConfig,
+    SamlConfig,
+    TlsListenerConfig,
+    TrustedCaCert,
+)
 from capki.db.models.users import User
 from capki.db.session import get_db
-from capki.services import log_forwarding_service, notification_service, settings_service, tls_service
+from capki.services import (
+    log_forwarding_service,
+    notification_service,
+    settings_service,
+    tls_service,
+    trust_service,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -408,3 +420,126 @@ def test_log_forwarding_settings(
     return LogForwardingTestResponse(
         hec_sent=hec_sent, hec_error=hec_error, syslog_sent=syslog_sent, syslog_error=syslog_error
     )
+
+
+# --- Trusted CA certificates (outbound TLS trust store) ----------------
+
+
+class TrustedCaResponse(BaseModel):
+    id: int
+    label: str | None
+    subject_dn: str
+    issuer_dn: str
+    serial_hex: str
+    sha256_fingerprint: str
+    not_before: str
+    not_after: str
+    is_self_signed: bool
+    enabled: bool
+    added_at: str
+
+    @classmethod
+    def from_model(cls, row: TrustedCaCert) -> "TrustedCaResponse":
+        return cls(
+            id=row.id,
+            label=row.label,
+            subject_dn=row.subject_dn,
+            issuer_dn=row.issuer_dn,
+            serial_hex=row.serial_hex,
+            sha256_fingerprint=row.sha256_fingerprint,
+            not_before=row.not_before.isoformat(),
+            not_after=row.not_after.isoformat(),
+            is_self_signed=row.is_self_signed,
+            enabled=row.enabled,
+            added_at=row.added_at.isoformat(),
+        )
+
+
+class AddTrustedCaRequest(BaseModel):
+    pem: str
+    label: str | None = None
+
+
+class UpdateTrustedCaRequest(BaseModel):
+    enabled: bool | None = None
+    label: str | None = None
+
+
+class TrustedCaUrlTestRequest(BaseModel):
+    url: str
+
+
+class TrustedCaUrlTestResponse(BaseModel):
+    ok: bool
+    error: str | None
+
+
+_TRUST_ERROR_STATUS = {
+    "invalid_pem": status.HTTP_400_BAD_REQUEST,
+    "not_a_ca": status.HTTP_400_BAD_REQUEST,
+    "duplicate": status.HTTP_409_CONFLICT,
+    "no_certificates": status.HTTP_400_BAD_REQUEST,
+}
+
+
+@router.get("/trusted-cas", response_model=list[TrustedCaResponse])
+def list_trusted_cas(
+    db: Session = Depends(get_db), _actor: AuthContext = Depends(require_permission(SETTINGS_READ))
+):
+    return [TrustedCaResponse.from_model(row) for row in trust_service.list_trusted_cas(db)]
+
+
+@router.post("/trusted-cas", response_model=list[TrustedCaResponse])
+def add_trusted_ca(
+    payload: AddTrustedCaRequest,
+    db: Session = Depends(get_db),
+    actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    try:
+        added = trust_service.add_trusted_cas(
+            db, pem=payload.pem, label=payload.label, actor_user_id=actor.user_id
+        )
+    except trust_service.TrustStoreError as exc:
+        raise HTTPException(
+            status_code=_TRUST_ERROR_STATUS.get(str(exc), status.HTTP_400_BAD_REQUEST),
+            detail=str(exc),
+        ) from exc
+    return [TrustedCaResponse.from_model(row) for row in added]
+
+
+@router.patch("/trusted-cas/{ca_id}", response_model=TrustedCaResponse)
+def update_trusted_ca(
+    ca_id: int,
+    payload: UpdateTrustedCaRequest,
+    db: Session = Depends(get_db),
+    actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    row = trust_service.update_trusted_ca(
+        db,
+        ca_id,
+        enabled=payload.enabled,
+        label=payload.label,
+        actor_user_id=actor.user_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return TrustedCaResponse.from_model(row)
+
+
+@router.delete("/trusted-cas/{ca_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_trusted_ca(
+    ca_id: int,
+    db: Session = Depends(get_db),
+    actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    if not trust_service.delete_trusted_ca(db, ca_id, actor_user_id=actor.user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+
+@router.post("/trusted-cas/test", response_model=TrustedCaUrlTestResponse)
+def test_trusted_ca_url(
+    payload: TrustedCaUrlTestRequest,
+    _actor: AuthContext = Depends(require_permission(SETTINGS_MANAGE)),
+):
+    ok, error = trust_service.test_url(payload.url)
+    return TrustedCaUrlTestResponse(ok=ok, error=error)

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from capki.core.crypto import envelope
 from capki.core.crypto.master_key import load_or_create_master_key
+from capki.core.net import trust_store
 from capki.db.base import utcnow
 from capki.db.models.certificates import Certificate
 from capki.db.models.settings import NotificationConfig
@@ -113,7 +114,7 @@ def send_email(config: NotificationConfig, *, to_address: str, subject: str, bod
 
     with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=10) as smtp:
         if config.smtp_use_tls:
-            smtp.starttls()
+            smtp.starttls(context=trust_store.build_ssl_context())
         if config.smtp_username and config.smtp_password_encrypted:
             password = _decrypt_secret(
                 config.smtp_password_encrypted, config.smtp_password_wrap_meta, _SMTP_PASSWORD_AAD
@@ -134,7 +135,9 @@ def send_telegram(config: NotificationConfig, *, chat_id: str, text: str) -> Non
         url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(
+            request, timeout=10, context=trust_store.build_ssl_context()
+        ) as response:
             if response.status != 200:
                 raise NotificationError(f"telegram_send_failed:{response.status}")
     except urllib.error.HTTPError as exc:
