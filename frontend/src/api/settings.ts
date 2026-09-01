@@ -101,6 +101,25 @@ export interface LogForwardingTestResult {
   syslog_error: string | null
 }
 
+export interface TrustedCa {
+  id: number
+  label: string | null
+  subject_dn: string
+  issuer_dn: string
+  serial_hex: string
+  sha256_fingerprint: string
+  not_before: string
+  not_after: string
+  is_self_signed: boolean
+  enabled: boolean
+  added_at: string
+}
+
+export interface TrustedCaUrlTestResult {
+  ok: boolean
+  error: string | null
+}
+
 export const settingsApi = {
   getSaml: () => apiClient.get<SamlConfig>('/api/v1/settings/saml'),
   updateSaml: (payload: Partial<SamlConfig>) =>
@@ -123,4 +142,13 @@ export const settingsApi = {
     apiClient.patch<LogForwardingConfig>('/api/v1/settings/log-forwarding', payload),
   testLogForwarding: () =>
     apiClient.post<LogForwardingTestResult>('/api/v1/settings/log-forwarding/test'),
+  getTrustedCas: () => apiClient.get<TrustedCa[]>('/api/v1/settings/trusted-cas'),
+  addTrustedCa: (pem: string, label?: string) =>
+    apiClient.post<TrustedCa[]>('/api/v1/settings/trusted-cas', { pem, label: label || null }),
+  updateTrustedCa: (id: number, payload: { enabled?: boolean; label?: string }) =>
+    apiClient.patch<TrustedCa>(`/api/v1/settings/trusted-cas/${id}`, payload),
+  deleteTrustedCa: (id: number) =>
+    apiClient.delete<void>(`/api/v1/settings/trusted-cas/${id}`),
+  testTrustedCaUrl: (url: string) =>
+    apiClient.post<TrustedCaUrlTestResult>('/api/v1/settings/trusted-cas/test', { url }),
 }

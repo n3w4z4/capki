@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from capki.config import settings
 from capki.core.crypto import envelope
 from capki.core.crypto.master_key import load_or_create_master_key
+from capki.core.net import trust_store
 from capki.db.base import utcnow
 from capki.db.models.settings import LogForwardingConfig
 from capki.db.session import SessionLocal
@@ -189,8 +190,9 @@ def send_hec_event(config: LogForwardingConfig, event: dict[str, Any]) -> None:
         headers={"Authorization": f"Splunk {token}", "Content-Type": "application/json"},
         method="POST",
     )
-    ctx = None
-    if not config.hec_verify_tls:
+    if config.hec_verify_tls:
+        ctx = trust_store.build_ssl_context()
+    else:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -235,7 +237,7 @@ def send_syslog_event(config: LogForwardingConfig, event: dict[str, Any], severi
             try:
                 sock = raw
                 if config.syslog_protocol == "tcp_tls":
-                    ctx = ssl.create_default_context()
+                    ctx = trust_store.build_ssl_context()
                     sock = ctx.wrap_socket(raw, server_hostname=config.syslog_host)
                 sock.sendall(payload)
             finally:

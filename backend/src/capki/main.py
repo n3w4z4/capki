@@ -20,6 +20,7 @@ from capki.api.routers import (
 )
 from capki.config import settings
 from capki.core.crypto.key_vault import key_vault
+from capki.core.net import trust_store
 from capki.db.session import SessionLocal
 from capki.scheduler import start_scheduler
 from capki.services import audit_service, log_forwarding_service
@@ -34,6 +35,7 @@ async def lifespan(_app: FastAPI):
     try:
         bootstrap_initial_admin(db)
         key_vault.load_intermediate(db)
+        trust_store.refresh_cache(db)
         log_forwarding_service.start(db)
     finally:
         db.close()

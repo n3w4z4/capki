@@ -10,6 +10,7 @@ from capki.db.models.settings import (
     NotificationConfig,
     SamlConfig,
     TlsListenerConfig,
+    TrustedCaCert,
 )
 from capki.db.models.tokens import ApiToken
 from capki.db.models.users import Session, User
@@ -31,6 +32,7 @@ __all__ = [
     "NotificationConfig",
     "SamlConfig",
     "TlsListenerConfig",
+    "TrustedCaCert",
     "ApiToken",
     "Session",
     "User",
